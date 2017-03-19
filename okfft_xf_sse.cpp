@@ -618,7 +618,7 @@ void okfft_sse_inv_512(const okfft_plan_t *plan, float *__restrict output, const
 {
     const __m128 sse_sign_mask = okfft_sse_inv_sign_mask;
     const float *__restrict sse_constants = okfft_sse_inv_constants;
-    OKFFT_SSE_FP_ODD(11, 11, plan, output, input);
+    OKFFT_SSE_FP_ODD(11, 10, plan, output, input);
     okfft_sse_xf_inv_512(plan, output);
 }
 

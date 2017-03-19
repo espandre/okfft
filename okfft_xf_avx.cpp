@@ -685,7 +685,7 @@ void okfft_avx_inv_512(const okfft_plan_t *plan, float *__restrict output, const
     const __m128 sse_sign_mask = okfft_sse_inv_sign_mask;
     const float *__restrict sse_constants = okfft_sse_inv_constants;
     const float *__restrict avx_constants = okfft_avx_inv_constants;
-    OKFFT_AVX_FP_ODD(11, 11, plan, output, input);
+    OKFFT_AVX_FP_ODD(11, 10, plan, output, input);
     okfft_avx_xf_inv_512(plan, output);
     _mm256_zeroupper();
 }
