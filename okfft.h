@@ -41,14 +41,14 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stddef.h>
 
 // comment out defines to configure
-//#define OKFFT_HAS_AVX 1
+// #define OKFFT_HAS_AVX 1
 #define OKFFT_HAS_SSE 1
 
 #if !defined(OKFFT_HAS_AVX) && !defined(OKFFT_HAS_SSE)
     #error "Must enable avx xforms, sse xforms, or both!"
 #endif
 
-// override for custom memory allocation
+// overrides for custom memory allocation
 #ifndef OKFFT_CUSTOM_ALLOC
     
     #define OKFFT_ALLOC_PLAN(size)      malloc(size)

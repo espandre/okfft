@@ -550,7 +550,7 @@ static void okfft_generate_twiddle_table(cplx *table, size_t table_size)
     static const __m128d sign_swap = { 0.0, -0.0 };
 
     // generate sin / cos tables with max .5 ulp error
-    for (int i = 1; i < table_size / 2; i++)
+    for (int i = 1; i < (int) table_size / 2; i++)
     {
         log2 = okfft_ilog2(i); // trailing zeros in index        
         __m128d wvl = w[log2];
@@ -805,7 +805,7 @@ static void okfft_init_real_coeffs(okfft_plan_t *plan, size_t N, bool is_inverse
         B[0] =  1.0f;
         B[1] =  1.0f;
 
-        for (int i = 1; i < N / 4; i++)
+        for (int i = 1; i < (int) N / 4; i++)
         {
             log2 = okfft_ilog2(i);
 
