@@ -113,8 +113,17 @@ void okfft_sse_inv_real(float *__restrict output, const float *__restrict buffer
 
 #endif
 
+void okfft_small_2(const okfft_plan_t *, float *__restrict out, const float *__restrict in);
+void okfft_small_fwd_4(const okfft_plan_t *, float *__restrict out, const float *__restrict in);
+void okfft_small_inv_4(const okfft_plan_t *, float *__restrict out, const float *__restrict in);
+void okfft_small_fwd_8(const okfft_plan_t *, float *__restrict out, const float *__restrict in);
+void okfft_small_inv_8(const okfft_plan_t *, float *__restrict out, const float *__restrict in);
+void okfft_small_fwd_16(const okfft_plan_t *, float *__restrict out, const float *__restrict in);
+void okfft_small_inv_16(const okfft_plan_t *, float *__restrict out, const float *__restrict in);
+
 #define OKFFT_FLAG_INVERSE_XFORM    1
 #define OKFFT_FLAG_AVX              2
+#define OKFFT_FLAG_SMALL            4
 
 static void okfft_init_offsets(okfft_plan_t *p, size_t N);
 static void okfft_init_indices(okfft_plan_t *p, size_t N);
@@ -150,9 +159,9 @@ okfft_plan_t *okfft_create_plan(size_t N, OKFFT_DIRECTION dir)
         return NULL;
     }
 
-    if (N < 32)
+    if (N < 2)
     {
-        OKFFT_LOG("Minimum FFT size is 32, size %zu provided.", N);
+        OKFFT_LOG("Minimum FFT size is 2, size %zu provided.", N);
         return NULL;
     }
 
@@ -187,6 +196,33 @@ okfft_plan_t *okfft_create_plan(size_t N, OKFFT_DIRECTION dir)
 
     if (dir == OKFFT_DIR_INVERSE)
         plan->flags |= OKFFT_FLAG_INVERSE_XFORM;
+
+    if (N < 32)
+    {
+        plan->flags |= OKFFT_FLAG_SMALL;
+        if (dir == OKFFT_DIR_FORWARD)
+        {
+            switch (N)
+            {
+            case  2: plan->xform = okfft_small_2;
+            case  4: plan->xform = okfft_small_fwd_4;
+            case  8: plan->xform = okfft_small_fwd_8;
+            case 16: plan->xform = okfft_small_fwd_16;
+            }
+        }
+        else
+        {
+            switch (N)
+            {
+            case  2: plan->xform = okfft_small_2;
+            case  4: plan->xform = okfft_small_inv_4;
+            case  8: plan->xform = okfft_small_inv_8;
+            case 16: plan->xform = okfft_small_inv_16;
+            }
+        }
+
+        return plan;
+    }
 
     #ifdef OKFFT_HAS_AVX
     if (okfft_cpu_has_avx())
@@ -282,6 +318,18 @@ okfft_plan_t *okfft_create_plan(size_t N, OKFFT_DIRECTION dir)
 
 okfft_plan_t *okfft_create_plan_real(size_t N, OKFFT_DIRECTION dir)
 {
+    if (N < 4)
+    {
+        OKFFT_LOG("Smallest supported real transform size is 4, got %zu!\n", N);
+        return NULL;
+    }
+
+    if (N < 64)
+    {
+        OKFFT_LOG("TODO: smaller real xforms than 64!");
+        return NULL;
+    }
+
     okfft_plan_t *plan = okfft_create_plan(N / 2, dir);
 
     if (plan)
@@ -304,9 +352,9 @@ void okfft_destroy_buffer(okfft_buffer_t *s)
 
 void okfft_destroy_plan(okfft_plan_t *plan)
 {
-    OKFFT_FREE_ALIGNED_DATA(plan->ws);
-    OKFFT_FREE_ALIGNED_DATA(plan->ws_is);
-    OKFFT_FREE_DATA(plan->offsets);
+    if (plan->ws)       OKFFT_FREE_ALIGNED_DATA(plan->ws);
+    if (plan->ws_is)    OKFFT_FREE_ALIGNED_DATA(plan->ws_is);
+    if (plan->offsets)  OKFFT_FREE_DATA(plan->offsets);
     
     if (plan->A)
     {
@@ -673,15 +721,15 @@ static void okfft_init_twiddles(okfft_plan_t *plan, size_t N, bool is_inverse)
         if (needs_reorder)
         {
             // AVX x8 reorder
-            for (size_t j = 0; j < n / 8; j += 4)
+            for (size_t j = 0; j < n / 8; j += 8)
             {
-                __m128 t00 = _mm_load_ps((float *)w0 + 2 * j);
-                __m128 t10 = _mm_load_ps((float *)w1 + 2 * j);
-                __m128 t20 = _mm_load_ps((float *)w2 + 2 * j);
+                __m128 t00 = _mm_load_ps((float *)w0 + j);
+                __m128 t10 = _mm_load_ps((float *)w1 + j);
+                __m128 t20 = _mm_load_ps((float *)w2 + j);
 
-                __m128 t01 = _mm_load_ps((float *)w0 + 2 * j + 4);
-                __m128 t11 = _mm_load_ps((float *)w1 + 2 * j + 4);
-                __m128 t21 = _mm_load_ps((float *)w2 + 2 * j + 4);
+                __m128 t01 = _mm_load_ps((float *)w0 + j + 4);
+                __m128 t11 = _mm_load_ps((float *)w1 + j + 4);
+                __m128 t21 = _mm_load_ps((float *)w2 + j + 4);
 
                 __m128 re00 = dup_re(t00);
                 __m128 re10 = dup_re(t10);
@@ -707,33 +755,33 @@ static void okfft_init_twiddles(okfft_plan_t *plan, size_t N, bool is_inverse)
                 im11 = _mm_xor_ps(im11, muli_sign);
                 im21 = _mm_xor_ps(im21, muli_sign);
 
-                _mm_store_ps((float *)w + 12 * j +  0, re00);
-                _mm_store_ps((float *)w + 12 * j +  4, re01);
+                _mm_store_ps((float *)w + 6 * j +  0, re00);
+                _mm_store_ps((float *)w + 6 * j +  4, re01);
 
-                _mm_store_ps((float *)w + 12 * j +  8, im00);
-                _mm_store_ps((float *)w + 12 * j + 12, im01);
+                _mm_store_ps((float *)w + 6 * j +  8, im00);
+                _mm_store_ps((float *)w + 6 * j + 12, im01);
 
-                _mm_store_ps((float *)w + 12 * j + 16, re10);
-                _mm_store_ps((float *)w + 12 * j + 20, re11);
+                _mm_store_ps((float *)w + 6 * j + 16, re10);
+                _mm_store_ps((float *)w + 6 * j + 20, re11);
 
-                _mm_store_ps((float *)w + 12 * j + 24, im10);
-                _mm_store_ps((float *)w + 12 * j + 28, im11);
+                _mm_store_ps((float *)w + 6 * j + 24, im10);
+                _mm_store_ps((float *)w + 6 * j + 28, im11);
 
-                _mm_store_ps((float *)w + 12 * j + 32, re20);
-                _mm_store_ps((float *)w + 12 * j + 36, re21);
+                _mm_store_ps((float *)w + 6 * j + 32, re20);
+                _mm_store_ps((float *)w + 6 * j + 36, re21);
 
-                _mm_store_ps((float *)w + 12 * j + 40, im20);
-                _mm_store_ps((float *)w + 12 * j + 44, im21);
+                _mm_store_ps((float *)w + 6 * j + 40, im20);
+                _mm_store_ps((float *)w + 6 * j + 44, im21);
             }
         }
         else
         #endif
         {
-            for (size_t j = 0; j < n / 8; j += 2) 
+            for (size_t j = 0; j < n / 8; j += 4) 
             {
-                __m128 t0 = _mm_load_ps((float *) w0 + j * 2);
-                __m128 t1 = _mm_load_ps((float *) w1 + j * 2);
-                __m128 t2 = _mm_load_ps((float *) w2 + j * 2);
+                __m128 t0 = _mm_load_ps((float *) w0 + j);
+                __m128 t1 = _mm_load_ps((float *) w1 + j);
+                __m128 t2 = _mm_load_ps((float *) w2 + j);
 
                 __m128 re0 = dup_re(t0);
                 __m128 re1 = dup_re(t1);
@@ -747,14 +795,14 @@ static void okfft_init_twiddles(okfft_plan_t *plan, size_t N, bool is_inverse)
                 im1 = _mm_xor_ps(im1, muli_sign);
                 im2 = _mm_xor_ps(im2, muli_sign);
 
-                _mm_store_ps((float *) w + j * 12 +  0, re0);
-                _mm_store_ps((float *) w + j * 12 +  4, im0);
+                _mm_store_ps((float *) w + j * 6 +  0, re0);
+                _mm_store_ps((float *) w + j * 6 +  4, im0);
 
-                _mm_store_ps((float *) w + j * 12 +  8, re1);
-                _mm_store_ps((float *) w + j * 12 + 12, im1);
+                _mm_store_ps((float *) w + j * 6 +  8, re1);
+                _mm_store_ps((float *) w + j * 6 + 12, im1);
 
-                _mm_store_ps((float *) w + j * 12 + 16, re2);
-                _mm_store_ps((float *) w + j * 12 + 20, im2);
+                _mm_store_ps((float *) w + j * 6 + 16, re2);
+                _mm_store_ps((float *) w + j * 6 + 20, im2);
             }
         }
 
